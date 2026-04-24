@@ -13,16 +13,60 @@ const server = Bun.serve({
     const pathname = url.pathname;
     const searchParams = url.searchParams;
 
-    // GET /items - listar todos os itens
+  
     if (pathname === "/items" && method === "GET") {
       const items = await todo.getItems();
       const itemsData = items.map(item => item.toJSON());
-      return new Response(JSON.stringify(itemsData), {
+
+      const pageParam = searchParams.get("page");
+      const limitParam = searchParams.get("limit");
+
+     
+      if (!pageParam && !limitParam) {
+        return new Response(JSON.stringify(itemsData), {
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const page = parseInt(pageParam || "1");
+      const limit = parseInt(limitParam || "10");
+
+      if (isNaN(page) || page < 1) {
+        return new Response(JSON.stringify({ error: "Invalid 'page' parameter. Must be a positive integer." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      if (isNaN(limit) || limit < 1) {
+        return new Response(JSON.stringify({ error: "Invalid 'limit' parameter. Must be a positive integer." }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+
+      const totalItems = itemsData.length;
+      const totalPages = Math.ceil(totalItems / limit);
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      const paginatedItems = itemsData.slice(startIndex, endIndex);
+
+      return new Response(JSON.stringify({
+        data: paginatedItems,
+        pagination: {
+          page,
+          limit,
+          totalItems,
+          totalPages,
+          hasNextPage: page < totalPages,
+          hasPrevPage: page > 1
+        }
+      }), {
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    // POST /items - adicionar novo item
+    
     if (pathname === "/items" && method === "POST") {
       try {
         const body = await request.json();
@@ -50,7 +94,7 @@ const server = Bun.serve({
       }
     }
 
-    // PUT /items?index=0 - atualizar item
+   
     if (pathname === "/items" && method === "PUT") {
       try {
         const index = parseInt(searchParams.get("index") || "");
@@ -72,6 +116,24 @@ const server = Bun.serve({
           });
         }
 
+        const existingItem = await todo.findItemByDescription(description);
+        if (existingItem) {
+          const existingData = existingItem.toJSON();
+          const currentItem = await todo.findItemByIndex(index);
+          const currentData = currentItem?.toJSON();
+
+      
+          if (!currentItem || currentData?.description !== description) {
+            return new Response(JSON.stringify({
+              error: "Conflict: an item with this description already exists.",
+              conflictingItem: existingData
+            }), {
+              status: 409,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+        }
+
         const item = new Item(description);
         await todo.updateItem(index, item);
 
@@ -87,7 +149,6 @@ const server = Bun.serve({
       }
     }
 
-    // DELETE /items?index=0 - remover item
     if (pathname === "/items" && method === "DELETE") {
       try {
         const index = parseInt(searchParams.get("index") || "");

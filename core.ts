@@ -73,7 +73,7 @@ export class ToDo {
 
   async removeItem(index: number) {
     const items = await this.items;
-    if (index < 0 || index > items.length)
+    if (index < 0 || index >= items.length)
       throw new Error('Index out of bounds');
     items.splice(index, 1);
     this.saveToFile();
